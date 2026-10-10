@@ -1,0 +1,11 @@
+{
+  "name": "gringotts-bank-booking",
+  "version": "1.0.0",
+  "scripts": {
+    "build-css": "tailwindcss -i ./web/static/input.css -o ./web/static/style.css --watch",
+    "build-css-prod": "tailwindcss -i ./web/static/input.css -o ./web/static/style.css --minify"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.0"
+  }
+}

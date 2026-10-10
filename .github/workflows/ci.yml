@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+# Least privilege: the workflow only needs to read the repository.
+permissions:
+  contents: read
+
+# A newer push to the same ref makes an in-flight run obsolete.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Build, vet and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          # Single source of truth for the Go version.
+          go-version-file: go.mod
+
+      - name: Verify module checksums
+        run: go mod verify
+
+      - name: Check formatting
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "These files are not gofmt-formatted:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Build
+        run: go build ./...
+
+      # -race matters here: the repositories claim to be safe for concurrent use.
+      - name: Test
+        run: go test -race -coverprofile=coverage.out ./...
+
+      - name: Coverage summary
+        run: go tool cover -func=coverage.out | tail -n 1
+
+  integration:
+    name: Postgres integration tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # Starts a throwaway PostgreSQL container (via testcontainers) from the
+      # project's own init.sql and exercises the repositories against it,
+      # including the concurrent-booking capacity check. Docker is preinstalled
+      # on GitHub-hosted runners.
+      - name: Integration tests
+        run: go test -race -tags integration -count=1 ./internal/repository/postgres/...
+
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t gringotts-booking:ci .
+
+      - name: Image must not run as root
+        run: |
+          uid=$(docker run --rm --entrypoint id gringotts-booking:ci -u)
+          echo "container user id: $uid"
+          if [ "$uid" = "0" ]; then
+            echo "The image runs as root"
+            exit 1
+          fi

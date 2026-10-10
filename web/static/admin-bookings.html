@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Booking Management - Gringotts Bank</title>
+    <link href="/static/style.css" rel="stylesheet">
+    <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+</head>
+<body class="bg-gray-100 dark:bg-gray-900 transition-colors">
+    <!--
+        Admin bookings page (static). This file is a static admin page with
+        small client-side interactivity. It uses Alpine.js
+        for lightweight behavior. Key points:
+                    - The root <div> is the Alpine component (x-data="bookingApp()").
+                    - x-init="loadData()" triggers initial data loading (branches + bookings).
+                    - Methods in the bookingApp() JS object perform fetch calls to the API
+                        endpoints (/api/branches, /api/bookings, DELETE /api/bookings/{id}).
+                - The template elements below (x-for) are used to render dynamic lists.
+    -->
+    <div x-data="bookingApp()" x-init="loadData()">
+    <!-- Header: branding, navigation, dark mode toggle and logout -->
+    <header class="bg-amber-800 dark:bg-amber-900 text-white p-4">
+            <div class="container mx-auto flex justify-between items-center">
+                <h1 class="text-2xl font-bold">Booking Management</h1>
+                <div class="flex items-center space-x-6">
+                    <!-- Primary admin navigation. Links point to other admin pages. -->
+                    <nav class="hidden md:flex space-x-6">
+                        <a href="/admin/branches" class="hover:text-amber-200 transition">Branch Management</a>
+                        <a href="/admin/bookings" class="text-amber-200">Booking Management</a>
+                    </nav>
+                    <!-- Dark mode toggle: invokes toggleDarkMode() in bookingApp -->
+                    <button @click="toggleDarkMode" class="p-2 rounded-lg bg-amber-700 hover:bg-amber-600 transition">
+                        <svg x-show="!darkMode" class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                            <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"/>
+                        </svg>
+                        <svg x-show="darkMode" class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clip-rule="evenodd"/>
+                        </svg>
+                    </button>
+                    <!-- Logout button: clears admin token cookie and redirects to / -->
+                    <button @click="logout" class="bg-amber-700 px-4 py-2 rounded hover:bg-amber-600">
+                        Logout
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <main class="container mx-auto p-6 dark:text-white">
+                <!-- Main card: controls and bookings list -->
+                <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-xl font-bold">Booking Management</h2>
+                    <div class="flex space-x-4">
+                        <select x-model="selectedBranchFilter" @change="filterBookings" 
+                                class="px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded">
+                            <option value="">All Branches</option>
+                            <template x-for="branch in branches" :key="branch.id">
+                                <option :value="branch.id" x-text="branch.name"></option>
+                            </template>
+                        </select>
+                        <button @click="loadBookings" class="bg-amber-600 text-white px-4 py-2 rounded hover:bg-amber-700">
+                            Refresh
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Bookings List: shows message when empty and a template for each booking -->
+                <div x-show="filteredBookings.length === 0" class="text-center py-8 text-gray-500">
+                    No bookings found
+                </div>
+                
+                <div class="space-y-4">
+                    <!-- booking template: rendered for each booking in filteredBookings -->
+                    <template x-for="booking in filteredBookings" :key="booking.id">
+                        <div class="border dark:border-gray-600 rounded-lg p-4">
+                            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 items-center">
+                                <div>
+                                    <p class="font-semibold" x-text="booking.customer_name"></p>
+                                    <p class="text-sm text-gray-600 dark:text-gray-400" x-text="booking.email"></p>
+                                    <p class="text-sm text-gray-600 dark:text-gray-400" x-text="booking.phone"></p>
+                                </div>
+                                <div>
+                                    <p class="font-medium" x-text="getBranchName(booking.branch_id)"></p>
+                                    <p class="text-sm text-gray-600 dark:text-gray-400" x-text="getServiceName(booking)"></p>
+                                </div>
+                                <div>
+                                    <p class="font-medium" x-text="formatDateTime(booking.date, booking.time_slot)"></p>
+                                </div>
+                                <div class="flex justify-end space-x-2">
+                                    <span :class="booking.status === 'confirmed' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'"
+                                          class="px-2 py-1 rounded text-xs font-medium uppercase" x-text="booking.status"></span>
+                                    <!-- Cancel button: calls cancelBooking(id). Only visible for confirmed bookings. -->
+                                    <button @click="cancelBooking(booking.id)" 
+                                            x-show="booking.status === 'confirmed'"
+                                            class="bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700 text-sm">
+                                        Cancel
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Inline script: bookingApp() is the Alpine.js component used by the
+         page. It contains state (branches, bookings, filters) and methods
+         that interact with the server via fetch() -->
+    <script>
+        function bookingApp() {
+            return {
+                // UI state
+                darkMode: localStorage.getItem('darkMode') === 'true',
+                branches: [],
+                bookings: [],
+                filteredBookings: [],
+                selectedBranchFilter: '',
+
+                // loadData is called on init to set theme and fetch initial data
+                async loadData() {
+                    document.documentElement.classList.toggle('dark', this.darkMode);
+                    await this.loadBranches();
+                    await this.loadBookings();
+                },
+
+                // Fetch available branches used to populate the branch filter
+                async loadBranches() {
+                    try {
+                        const response = await fetch('/api/branches');
+                        this.branches = await response.json() || [];
+                    } catch (error) {
+                        console.error('Error loading branches:', error);
+                    }
+                },
+
+                // Fetch all bookings and re-apply the current filter
+                async loadBookings() {
+                    try {
+                        const response = await fetch('/api/bookings');
+                        this.bookings = await response.json() || [];
+                        this.filterBookings();
+                    } catch (error) {
+                        console.error('Error loading bookings:', error);
+                        this.bookings = [];
+                        this.filteredBookings = [];
+                    }
+                },
+
+                // Apply the selected branch filter to the bookings list
+                filterBookings() {
+                    if (!this.selectedBranchFilter) {
+                        this.filteredBookings = this.bookings;
+                    } else {
+                        this.filteredBookings = this.bookings.filter(booking => 
+                            booking.branch_id === this.selectedBranchFilter
+                        );
+                    }
+                },
+
+                // Cancel a booking via DELETE /api/bookings/{id} and refresh the list
+                async cancelBooking(id) {
+                    if (!confirm('Cancel this booking?')) return;
+                    
+                    try {
+                        const response = await fetch(`/api/bookings/${id}`, { method: 'DELETE' });
+                        if (response.ok) {
+                            await this.loadBookings();
+                        } else {
+                            alert('Failed to cancel booking');
+                        }
+                    } catch (error) {
+                        console.error('Error cancelling booking:', error);
+                        alert('Error cancelling booking');
+                    }
+                },
+
+                // Helper: resolve branch name from id
+                getBranchName(branchId) {
+                    const branch = this.branches.find(b => b.id === branchId);
+                    return branch ? branch.name : 'Unknown Branch';
+                },
+
+                // Helper: normalize service name display
+                getServiceName(booking) {
+                    return booking.service ? booking.service.name || booking.service : 'Unknown Service';
+                },
+
+                // Helper: format date + time for display
+                formatDateTime(date, timeSlot) {
+                    const dateObj = new Date(date);
+                    const formattedDate = dateObj.toLocaleDateString('en-US', {
+                        weekday: 'short',
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric'
+                    });
+                    return `${formattedDate} at ${timeSlot}`;
+                },
+
+                // Toggle and persist dark mode preference
+                toggleDarkMode() {
+                    this.darkMode = !this.darkMode;
+                    localStorage.setItem('darkMode', this.darkMode);
+                    document.documentElement.classList.toggle('dark', this.darkMode);
+                },
+
+                // Logout helper: clear cookie and redirect to home
+                logout() {
+                    document.cookie = 'admin_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+                    window.location.href = '/';
+                }
+            }
+        }
+    </script>
+</body>
+</html>
