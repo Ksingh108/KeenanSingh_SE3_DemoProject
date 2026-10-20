@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Branch Management - Gringotts Bank</title>
+    <link href="/static/style.css" rel="stylesheet">
+    <style>[x-cloak] { display: none !important; }</style>
+    <script defer src="/static/alpine.min.js"></script>
+</head>
+<body class="bg-gray-100 dark:bg-gray-900 transition-colors">
+    <!--
+        Admin branches page (static). This file is a static admin page with
+        small client-side interactivity using Alpine.js for simple behaviors
+        like showing forms and making fetch() calls to backend endpoints.
+    -->
+    <div x-data="branchApp()" x-init="loadBranches()">
+        <header class="bg-amber-800 dark:bg-amber-900 text-white p-4">
+            <div class="container mx-auto flex justify-between items-center">
+                <h1 class="text-2xl font-bold">Branch Management</h1>
+                <div class="flex items-center space-x-6">
+                    <nav class="hidden md:flex space-x-6">
+                        <a href="/admin/branches" class="text-amber-200">Branch Management</a>
+                        <a href="/admin/bookings" class="hover:text-amber-200 transition">Booking Management</a>
+                    </nav>
+                    <button @click="toggleDarkMode" class="p-2 rounded-lg bg-amber-700 hover:bg-amber-600 transition">
+                        <svg x-show="!darkMode" x-cloak class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                            <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"/>
+                        </svg>
+                        <svg x-show="darkMode" x-cloak class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clip-rule="evenodd"/>
+                        </svg>
+                    </button>
+                    <button @click="logout" class="bg-amber-700 px-4 py-2 rounded hover:bg-amber-600">
+                        Logout
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <div x-show="notice.show" x-cloak x-transition
+             :class="notice.type === 'error' ? 'bg-red-100 border-red-400 text-red-700 dark:bg-red-900 dark:border-red-700 dark:text-red-100' : notice.type === 'success' ? 'bg-green-100 border-green-400 text-green-700 dark:bg-green-900 dark:border-green-700 dark:text-green-100' : 'bg-blue-100 border-blue-400 text-blue-700 dark:bg-blue-900 dark:border-blue-700 dark:text-blue-100'"
+             class="container mx-auto mt-4 border rounded-lg px-4 py-3 mx-4 md:mx-auto"
+             x-text="notice.text">
+        </div>
+
+        <main class="container mx-auto p-6 dark:text-white">
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-xl font-bold">Branch Management</h2>
+                    <!-- Add Branch button: toggles the add form (showAddForm) -->
+                    <button @click="showAddForm = true" 
+                            class="bg-amber-600 text-white px-4 py-2 rounded hover:bg-amber-700">
+                        Add Branch
+                    </button>
+                </div>
+
+                <!-- Add Branch Form: visible when showAddForm is true. Submits via addBranch() -->
+                <div x-show="showAddForm" x-cloak class="mb-6 p-4 border border-gray-200 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700">
+                    <h3 class="font-semibold mb-4">Add New Branch</h3>
+                    <form @submit.prevent="addBranch" class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Branch Name</label>
+                            <input x-model="newBranch.name" required
+                                   class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">City</label>
+                            <input x-model="newBranch.city" required
+                                   class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent">
+                        </div>
+                        <div class="col-span-2">
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Address</label>
+                            <input x-model="newBranch.address" required
+                                   class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Phone</label>
+                            <input x-model="newBranch.phone" type="tel" required
+                                   inputmode="tel"
+                                   pattern="^\\+?[0-9]+([ -][0-9]+)*$"
+                                   placeholder="+27 82 123 4567"
+                                   title="Use a South African number, for example +27 82 123 4567 or 082 123 4567"
+                                   class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent">
+                            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Use a South African number, for example +27 82 123 4567 or 082 123 4567.</p>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Branch Capacity</label>
+                            <input x-model.number="newBranch.capacity" type="number" min="1" required
+                                   class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent">
+                        </div>
+                        <div class="col-span-2">
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Services Offered</label>
+                            <div class="grid grid-cols-2 gap-2">
+                                <template x-for="service in services" :key="service.id">
+                                    <label class="flex items-center space-x-2">
+                                        <input type="checkbox" :value="service.id" x-model="newBranch.services"
+                                               class="rounded border-gray-300 text-amber-600 focus:ring-amber-500">
+                                        <span class="text-sm" x-text="service.name"></span>
+                                    </label>
+                                </template>
+                            </div>
+                        </div>
+                        <div class="col-span-2 flex gap-2">
+                            <!-- Save: calls addBranch() defined in the branchApp script -->
+                            <button type="submit" class="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded">
+                                Save
+                            </button>
+                            <!-- Cancel: hides form and resets fields -->
+                            <button type="button" @click="showAddForm = false; resetForm()"
+                                    class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded">
+                                Cancel
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Branches List: rendered from branches[] via x-for -->
+                <div class="space-y-4">
+                    <template x-for="branch in branches" :key="branch.id">
+                        <div class="border border-gray-200 dark:border-gray-600 rounded-lg p-4 flex justify-between items-center">
+                            <div>
+                                <h3 class="font-semibold" x-text="branch.name"></h3>
+                                <p class="text-gray-600 dark:text-gray-400" x-text="`${branch.city} - ${branch.address}`"></p>
+                                <p class="text-sm text-gray-500 dark:text-gray-400" x-text="`Phone: ${branch.phone} | Capacity: ${branch.capacity}`"></p>
+                            </div>
+                            <!-- Archive hides this branch but keeps its booking history. -->
+                            <button @click="deleteBranch(branch.id)" 
+                                    class="bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700">
+                                Archive
+                            </button>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Inline script: branchApp() provides state and methods for the page
+        (loadBranches, loadServices, addBranch, deleteBranch). It uses
+        fetch() to interact with the backend -->
+    <script>
+        function branchApp() {
+            return {
+                darkMode: localStorage.getItem('darkMode') === 'true',
+                branches: [],
+                services: [],
+                showAddForm: false,
+                notice: {
+                    show: false,
+                    type: 'info',
+                    text: ''
+                },
+                newBranch: {
+                    name: '',
+                    city: '',
+                    address: '',
+                    phone: '',
+                    capacity: '',
+                    services: []
+                },
+
+                showNotice(type, text) {
+                    this.notice = { show: true, type, text };
+                },
+
+                async errorMessage(response, fallback) {
+                    try {
+                        const body = await response.json();
+                        return body?.error?.message || fallback;
+                    } catch {
+                        return fallback;
+                    }
+                },
+
+                // Initialize page state and load services after branches
+                async loadBranches() {
+                    document.documentElement.classList.toggle('dark', this.darkMode);
+                    try {
+                        const response = await fetch('/api/branches');
+                        this.branches = await response.json() || [];
+                        await this.loadServices();
+                    } catch (error) {
+                        console.error('Error loading branches:', error);
+                    }
+                },
+
+                // Load list of available services used in the add branch form
+                async loadServices() {
+                    try {
+                        const response = await fetch('/api/services');
+                        this.services = await response.json() || [];
+                    } catch (error) {
+                        console.error('Error loading services:', error);
+                        this.services = [];
+                    }
+                },
+
+                // addBranch validates local fields and POSTs to /admin/branches
+                async addBranch() {
+                    if (!this.newBranch.name || !this.newBranch.city || !this.newBranch.address || !this.newBranch.phone || !this.newBranch.capacity) {
+                        alert('Please fill all fields');
+                        return;
+                    }
+                    
+                    try {
+                        const response = await fetch('/admin/branches', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(this.newBranch)
+                        });
+                        
+                        if (response.ok) {
+                            await this.loadBranches();
+                            this.resetForm();
+                            this.showAddForm = false;
+                            this.showNotice('success', 'Branch added successfully');
+                            return;
+                        }
+
+                        const message = await this.errorMessage(response, `Failed to add branch (${response.status}).`);
+                        this.showNotice('error', message);
+                    } catch (error) {
+                        console.error('Error adding branch:', error);
+                        this.showNotice('error', 'Error adding branch: ' + error.message);
+                    }
+                },
+
+                // deleteBranch sends DELETE /admin/branches/{id} and refreshes list
+                async deleteBranch(id) {
+                    if (!confirm('Archive this branch? Canceled booking history will be retained.')) return;
+
+                    try {
+                        const response = await fetch(`/admin/branches/${id}`, { method: 'DELETE' });
+
+                        if (!response.ok) {
+                            const message = await this.errorMessage(response, `Delete failed (${response.status}).`);
+                            console.error('Branch delete rejected:', { status: response.status, message });
+                            this.showNotice('error', message);
+                            return;
+                        }
+
+                        this.showNotice('success', 'Branch archived successfully');
+                        await this.loadBranches();
+                    } catch (error) {
+                        console.error('Error deleting branch:', error);
+                        this.showNotice('error', 'Error deleting branch: ' + error.message);
+                    }
+                },
+
+                // Reset local add-branch form model
+                resetForm() {
+                    this.newBranch = { name: '', city: '', address: '', phone: '', capacity: '', services: [] };
+                },
+
+                // Theme toggle and logout helpers
+                toggleDarkMode() {
+                    this.darkMode = !this.darkMode;
+                    localStorage.setItem('darkMode', this.darkMode);
+                    document.documentElement.classList.toggle('dark', this.darkMode);
+                },
+
+                async logout() {
+                    try {
+                        const response = await fetch('/admin/logout', { method: 'POST' });
+                        if (!response.ok) {
+                            this.showNotice('error', 'Logout failed. Please try again.');
+                            return;
+                        }
+                    } catch (error) {
+                        this.showNotice('error', 'Logout failed. Please try again.');
+                        return;
+                    }
+                    window.location.href = '/';
+                }
+            }
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+{
+  "name": "gringotts-bank-booking",
+  "version": "1.0.0",
+  "scripts": {
+    "build-css": "tailwindcss -i ./web/static/input.css -o ./web/static/style.css --watch",
+    "build-css-prod": "tailwindcss -i ./web/static/input.css -o ./web/static/style.css --minify",
+    "build-js": "node -e \"require('fs').copyFileSync('node_modules/alpinejs/dist/cdn.min.js', 'web/static/alpine.min.js')\""
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "4.3.3",
+    "alpinejs": "3.14.9",
+    "tailwindcss": "4.3.3"
+  }
+}

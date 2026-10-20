@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Our Branches - Gringotts Bank</title>
+    <link href="/static/style.css" rel="stylesheet">
+    <style>[x-cloak] { display: none !important; }</style>
+    <script defer src="/static/alpine.min.js"></script>
+</head>
+<body class="bg-gray-50 dark:bg-gray-900 transition-colors">
+<!-- Branches page: lists branches and provides links to book visits. Uses
+     Alpine.js for local state and fetch() calls to the backend. -->
+<div x-data="branchesApp()" x-init="init()">
+    <!-- Header -->
+    <header class="bg-gradient-to-r from-amber-700 to-amber-900 dark:from-amber-800 dark:to-amber-950 text-white shadow-lg">
+        <div class="container mx-auto px-4 py-6">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-3">
+                    <svg class="w-10 h-10" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M4 4a2 2 0 00-2 2v1h16V6a2 2 0 00-2-2H4z"/>
+                        <path fill-rule="evenodd" d="M18 9H2v5a2 2 0 002 2h12a2 2 0 002-2V9zM4 13a1 1 0 011-1h1a1 1 0 110 2H5a1 1 0 01-1-1zm5-1a1 1 0 100 2h1a1 1 0 100-2H9z" clip-rule="evenodd"/>
+                    </svg>
+                    <h1 class="text-3xl font-bold">Gringotts Bank</h1>
+                </div>
+                <div class="flex items-center space-x-6">
+                    <nav class="hidden md:flex space-x-6">
+                        <a href="/booking" class="hover:text-amber-200 transition">New Booking</a>
+                        <a href="/branches" class="text-amber-200">Our Branches</a>
+                        <a href="#" @click.prevent="showAdminLogin = true" class="hover:text-amber-200 transition">Admin</a>
+                    </nav>
+                    <button @click="toggleDarkMode" class="p-2 rounded-lg bg-amber-800 hover:bg-amber-700 transition">
+                        <svg x-show="!darkMode" x-cloak class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                            <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"/>
+                        </svg>
+                        <svg x-show="darkMode" x-cloak class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clip-rule="evenodd"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content: grid of branch cards showing contact info, hours and services -->
+    <main class="container mx-auto px-4 py-8 dark:text-white">
+        <div class="max-w-5xl mx-auto">
+            <h2 class="text-2xl font-bold text-gray-800 dark:text-white mb-6">Our Branches</h2>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <template x-for="branch in branches" :key="branch.id">
+                    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
+                        <h3 class="text-xl font-bold text-amber-800 mb-3" x-text="branch.name"></h3>
+                        <div class="space-y-2 text-gray-600 dark:text-gray-400">
+                            <p><span class="font-medium">📍 Address:</span> <span x-text="branch.address"></span></p>
+                            <p><span class="font-medium">🏙️ City:</span> <span x-text="branch.city"></span></p>
+                            <p><span class="font-medium">📞 Phone:</span> <span x-text="branch.phone"></span></p>
+                            <p><span class="font-medium">🕐 Hours:</span>
+                                <span x-text="branch.hours"></span>
+                            </p>
+                            <div class="pt-2">
+                                <p class="font-medium mb-2">Services Available:</p>
+                                <div class="flex flex-wrap gap-2">
+                                    <template x-for="service in branch.services" :key="service.id">
+                                            <span class="px-3 py-1 bg-amber-100 text-amber-800 rounded-full text-sm"
+                                                  x-text="service.name"></span>
+                                    </template>
+                                </div>
+                            </div>
+                        </div>
+                        <a :href="`/booking?branch=${branch.id}`"
+                           class="mt-4 w-full inline-block text-center px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition">
+                            Book Visit
+                        </a>
+                    </div>
+                </template>
+            </div>
+        </div>
+    </main>
+
+    <!-- Admin Login Modal: posts credentials to /admin/login and navigates to /admin on success -->
+    <div x-show="showAdminLogin" x-cloak class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div class="bg-white dark:bg-gray-800 dark:text-white p-6 rounded-lg shadow-xl w-full max-w-md mx-4">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-bold">Admin Login</h3>
+                <button @click="showAdminLogin = false" class="text-gray-500 hover:text-gray-700">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+            
+            <form @submit.prevent="adminLogin" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium mb-2">Username</label>
+                    <input type="text" x-model="adminForm.username" required
+                           class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 rounded-md focus:ring-amber-500 focus:border-amber-500">
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium mb-2">Password</label>
+                    <input type="password" x-model="adminForm.password" required
+                           class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 rounded-md focus:ring-amber-500 focus:border-amber-500">
+                </div>
+                
+                <button type="submit" class="w-full bg-amber-600 text-white py-2 px-4 rounded-md hover:bg-amber-700 transition">
+                    Login
+                </button>
+            </form>
+            
+            <div x-show="adminError" x-cloak class="mt-4 text-red-600 text-sm" x-text="adminError"></div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="bg-gray-800 dark:bg-gray-950 text-white mt-16 py-8">
+        <div class="container mx-auto px-4 text-center">
+            <p>&copy; 2025 Gringotts Bank. All rights reserved.</p>
+            <p class="text-sm text-gray-400 mt-2">Protecting your treasures since 1474</p>
+        </div>
+    </footer>
+</div>
+
+<!-- Inline script: branchesApp() defines page state and methods (init, loadBranches,
+     adminLogin, theme toggle) used by bindings and event handlers. -->
+<script>
+    function branchesApp() {
+        return {
+            darkMode: localStorage.getItem('darkMode') === 'true',
+            branches: [],
+            showAdminLogin: false,
+            adminForm: { username: '', password: '' },
+            adminError: '',
+
+            async init() {
+                document.documentElement.classList.toggle('dark', this.darkMode);
+                await this.loadBranches();
+            },
+
+            async loadBranches() {
+                try {
+                    const response = await fetch('/api/branches');
+                    const data = await response.json();
+                    this.branches = data || [];
+                } catch (error) {
+                    console.error('Error loading branches:', error);
+                    this.branches = [];
+                }
+            },
+
+            toggleDarkMode() {
+                this.darkMode = !this.darkMode;
+                localStorage.setItem('darkMode', this.darkMode);
+                document.documentElement.classList.toggle('dark', this.darkMode);
+            },
+
+            async adminLogin() {
+                try {
+                    const response = await fetch('/admin/login', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(this.adminForm)
+                    });
+                    
+                    if (response.ok) {
+                        window.location.href = '/admin';
+                    } else {
+                        this.adminError = 'Invalid credentials';
+                    }
+                } catch (error) {
+                    this.adminError = 'Login failed';
+                }
+            }
+        }
+    }
+</script>
+</body>
+</html>

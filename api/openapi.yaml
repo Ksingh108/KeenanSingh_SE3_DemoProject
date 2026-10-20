@@ -1,0 +1,892 @@
+openapi: 3.0.3
+info:
+  title: Gringotts Bank Branch Booking API
+  description: API for booking branch visits at Gringotts Bank
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:8080
+    description: Development server
+  - url: https://bookings.example.com
+    description: >-
+      Production placeholder. The application serves plain HTTP; production
+      must sit behind an HTTPS ingress, and the admin session cookie is Secure.
+
+paths:
+  /metrics:
+    get:
+      summary: Prometheus metrics
+      description: Internal monitoring endpoint. Restrict access at the ingress to the monitoring network.
+      tags: [Operations]
+      responses:
+        '200':
+          description: Request counts, latency histograms, booking submission outcomes, and SQL connection pool statistics.
+          content:
+            text/plain:
+              schema:
+                type: string
+        '500':
+          description: Metrics collection failed
+          content:
+            text/plain:
+              schema:
+                type: string
+  /api/bookings:
+    post:
+      summary: Create a new booking
+      description: >-
+        Accepts a single JSON body up to 16 KiB. Limited to 5 attempts per
+        connection IP per 60-second window per server process, including successful
+        and invalid requests. Forwarding headers do not change the quota identity.
+        An optional Idempotency-Key (1 to 128 visible ASCII characters) replays
+        the original booking for the same request; reuse with a different request
+        returns 409. A retry whose booking was cancelled also returns 409 (booking_cancelled); start a new booking with a new key.
+      tags: [Bookings]
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          description: Replays a successful booking request with the same key and body.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: '^[!-~]{1,128}$'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBookingRequest'
+      responses:
+        '201':
+          description: Booking created successfully or an earlier successful booking replayed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+        '400':
+          description: >-
+            Invalid booking request (invalid_request or slot_in_past), or the
+            selected branch does not offer the requested service (service_not_offered), or the Idempotency-Key header is
+            malformed (invalid_request).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Branch not found (branch_not_found)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: >-
+            Branch capacity exceeded for this time slot (slot_full), or an
+            Idempotency-Key was reused for a different request (idempotency_key_reused), or the booking created with that key has been cancelled (booking_cancelled).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '413':
+          description: Request body exceeds 16 KiB
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '415':
+          description: Content-Type is not application/json
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Booking request quota exceeded or limiter tracking capacity reached
+          headers:
+            Retry-After:
+              description: Seconds until the client should retry
+              schema:
+                type: integer
+                minimum: 1
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '500':
+          description: Booking could not be created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    get:
+      summary: Get bookings, optionally filtered by customer email (admin only)
+      tags: [Bookings]
+      security:
+        - AdminSessionCookie: []
+      parameters:
+        - name: email
+          in: query
+          required: false
+          description: >-
+            Customer email address to filter bookings. A present but empty or
+            malformed value returns 400; omit the parameter to list all bookings.
+            Query strings may appear in proxy or CDN logs; redact them for this
+            path (see ADR-0007).
+          schema:
+            type: string
+            format: email
+            maxLength: 255
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Page of bookings
+          headers:
+            Cache-Control:
+              description: Always `no-store`; responses contain customer PII
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Booking'
+        '400':
+          description: Invalid pagination parameters or email
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '500':
+          description: Bookings could not be retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/bookings/{id}:
+    delete:
+      summary: Cancel a booking (admin only)
+      tags: [Bookings]
+      security:
+        - AdminSessionCookie: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Booking ID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Booking cancelled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CancelBookingResponse'
+        '400':
+          description: Invalid booking ID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Booking not found or already cancelled. Repeat cancellation returns 404 rather than 409.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '500':
+          description: Booking could not be cancelled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/availability/{branchId}/{date}:
+    get:
+      summary: Check availability for a branch on a specific date
+      tags: [Availability]
+      parameters:
+        - name: branchId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: date
+          in: path
+          required: true
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: >-
+            Map of time slots where true means unavailable (at capacity or already
+            started today) and false means available for booking.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: boolean
+        '400':
+          description: Invalid branch ID, malformed or invalid YYYY-MM-DD date, or date before today
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Branch not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '500':
+          description: Availability could not be retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/branches:
+    get:
+      summary: Get all branches
+      tags: [Branches]
+      responses:
+        '200':
+          description: List of branches
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Branch'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '500':
+          description: Branches could not be retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/services:
+    get:
+      summary: Get all services
+      tags: [Services]
+      responses:
+        '200':
+          description: List of services
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Service'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '500':
+          description: Services could not be retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /admin/login:
+    post:
+      summary: Authenticate an administrator
+      tags: [Admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminLoginRequest'
+      responses:
+        '200':
+          description: Login succeeded; sets the admin session cookie
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminLoginResponse'
+        '400':
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '413':
+          description: Login request body exceeds 16 KiB
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '415':
+          description: Content-Type is not application/json
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: >-
+            IP locked for 15 minutes after 5 failed attempts within 10 minutes.
+            New IPs are also rejected while the 10,000-entry tracking limit is
+            full; expired records are cleaned up every minute. No Retry-After
+            header is sent. For a lockout, wait the full lockout; for tracking
+            saturation, retry after a minute.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '500':
+          description: Authentication failed because of an internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /admin/logout:
+    post:
+      summary: End the current admin session
+      tags: [Admin]
+      responses:
+        '200':
+          description: Logout completed and the admin cookie was cleared
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminLogoutResponse'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '500':
+          description: Logout could not be completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /admin/:
+    get:
+      summary: Open the admin home page (admin only)
+      description: Redirects authenticated administrators to the branch management page.
+      tags: [Admin UI]
+      security:
+        - AdminSessionCookie: []
+      responses:
+        '302':
+          description: >-
+            Authenticated: redirect to /admin/branches. Unauthenticated browser
+            request (Accept: text/html): redirect to / instead of the 401 below.
+          headers:
+            Location:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /admin/branches:
+    get:
+      summary: Get the branch management page (admin only)
+      tags: [Admin UI]
+      security:
+        - AdminSessionCookie: []
+      responses:
+        '200':
+          description: Branch management page
+          content:
+            text/html:
+              schema:
+                type: string
+        '302':
+          description: Browser page load without a valid session (Accept includes text/html); redirects to / where the admin login is. Other clients get 401.
+          headers:
+            Location:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      summary: Create a branch (admin only)
+      tags: [Admin, Branches]
+      security:
+        - AdminSessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBranchRequest'
+      responses:
+        '201':
+          description: Branch created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Branch'
+        '400':
+          description: Invalid branch data or a selected service does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '413':
+          description: Request body exceeds 16 KiB
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '415':
+          description: Content-Type is not application/json
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '500':
+          description: Branch could not be created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /admin/bookings:
+    get:
+      summary: Get the booking management page (admin only)
+      tags: [Admin UI]
+      security:
+        - AdminSessionCookie: []
+      responses:
+        '200':
+          description: Booking management page
+          content:
+            text/html:
+              schema:
+                type: string
+        '302':
+          description: Browser page load without a valid session (Accept includes text/html); redirects to / where the admin login is. Other clients get 401.
+          headers:
+            Location:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /admin/branches/{id}:
+    delete:
+      summary: Archive a branch (admin only)
+      tags: [Admin, Branches]
+      security:
+        - AdminSessionCookie: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Branch archived and removed from active branch listings; booking history is retained
+        '400':
+          description: Invalid branch ID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: Branch cannot be archived while active bookings still exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Branch not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '500':
+          description: Branch could not be archived
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /health:
+    get:
+      summary: Health check endpoint
+      tags: [Health]
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+        '503':
+          description: Service is unhealthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+
+  /live:
+    get:
+      summary: Liveness check endpoint
+      tags: [Health]
+      responses:
+        '200':
+          description: Service process is alive; the response body is empty
+
+  /ready:
+    get:
+      summary: Readiness check endpoint
+      tags: [Health]
+      responses:
+        '200':
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Readiness'
+        '503':
+          description: Service is not ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Readiness'
+
+components:
+  parameters:
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        default: 100
+        minimum: 1
+        maximum: 1000
+    Offset:
+      name: offset
+      in: query
+      required: false
+      schema:
+        type: integer
+        default: 0
+        minimum: 0
+  responses:
+    ServiceUnavailable:
+      description: Transient database failure or work deadline exceeded; error code is service_unavailable. A booking submission sent with an Idempotency-Key is safe to retry with the same key and body. Without a key, check existing bookings first because the commit outcome may be unknown.
+      headers:
+        Retry-After:
+          description: Minimum seconds before retrying
+          schema:
+            type: integer
+            minimum: 1
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Missing or invalid admin session
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  schemas:
+    HealthStatus:
+      type: object
+      required: [status, timestamp, checks]
+      properties:
+        status:
+          type: string
+          enum: [healthy, unhealthy]
+        timestamp:
+          type: string
+          format: date-time
+        checks:
+          type: object
+          additionalProperties:
+            type: object
+            required: [status, latency]
+            properties:
+              status:
+                type: string
+              message:
+                type: string
+              latency:
+                type: integer
+                description: Probe latency in nanoseconds
+    Readiness:
+      type: object
+      required: [status, latency]
+      properties:
+        status:
+          type: string
+          enum: [ready, 'not ready']
+        error:
+          type: string
+        latency:
+          type: integer
+          description: Database ping latency in nanoseconds
+    AdminLoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+          format: password
+    AdminLoginResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [success]
+    AdminLogoutResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [logged out]
+    CancelBookingResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [cancelled]
+    CreateBookingRequest:
+      type: object
+      required:
+        - branch_id
+        - service_id
+        - customer_name
+        - email
+        - phone
+        - date
+        - time_slot
+      properties:
+        branch_id:
+          type: string
+          format: uuid
+        service_id:
+          type: string
+          format: uuid
+        customer_name:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: 1-255 characters; letters, digits, spaces, and hyphens only.
+        email:
+          type: string
+          format: email
+          maxLength: 255
+          description: The server accepts ASCII email values with a dotted domain and a 2-or-more-letter suffix.
+        phone:
+          type: string
+          description: South African phone number that can be normalized to +27 format; for example +27 82 123 4567 or 082 123 4567.
+        date:
+          type: string
+          format: date
+          description: Must be today or a future date in the Africa/Johannesburg business time zone.
+        time_slot:
+          type: string
+          pattern: '^((09|1[0-6]):(00|30)|17:00)$'
+
+    Booking:
+      type: object
+      required: [id, branch_id, service_id, customer_name, email, phone, date, time_slot, status, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        branch_id:
+          type: string
+          format: uuid
+        service_id:
+          type: string
+          format: uuid
+        customer_name:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: 1-255 characters; letters, digits, spaces, and hyphens only.
+        email:
+          type: string
+          format: email
+          maxLength: 255
+        phone:
+          type: string
+          description: Normalized South African phone number in +27 format.
+        date:
+          type: string
+          format: date
+        time_slot:
+          type: string
+          pattern: '^((09|1[0-6]):(00|30)|17:00)$'
+        status:
+          type: string
+          enum: [confirmed, cancelled]
+        created_at:
+          type: string
+          format: date-time
+        branch:
+          $ref: '#/components/schemas/EntityRef'
+        service:
+          $ref: '#/components/schemas/EntityRef'
+
+    EntityRef:
+      type: object
+      description: Id and name summary. Present on booking list responses when names can be resolved (PostgreSQL repository); omitted by the in-memory demo repository.
+      required: [id, name]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+
+    Branch:
+      type: object
+      required: [id, name, address, city, phone, hours, capacity, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        address:
+          type: string
+        city:
+          type: string
+        phone:
+          type: string
+        hours:
+          type: string
+        capacity:
+          type: integer
+          minimum: 1
+          maximum: 1000
+        services:
+          type: array
+          items:
+            $ref: '#/components/schemas/Service'
+        created_at:
+          type: string
+          format: date-time
+
+    Service:
+      type: object
+      required: [id, name, description, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    CreateBranchRequest:
+      type: object
+      required: [name, city, address, phone, capacity, services]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: Must start with a letter or digit; permits letters, digits, spaces, hyphens, apostrophes, ampersands, and periods.
+        city:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: Must start with a letter; permits letters, spaces, hyphens, apostrophes, and periods.
+        address:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: Must start with a letter or digit; permits letters, digits, spaces, hyphens, apostrophes, commas, periods, slashes, and hash signs.
+        phone:
+          type: string
+          description: South African phone number that can be normalized to +27 format; for example +27 82 123 4567 or 082 123 4567.
+        capacity:
+          type: integer
+          minimum: 1
+          maximum: 1000
+        services:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: Stable machine-readable error category.
+            message:
+              type: string
+              description: Human-readable error message.
+            request_id:
+              type: string
+              format: uuid
+              description: Server-generated correlation ID, matching the X-Request-ID response header. Quote this ID when reporting an error.
+  securitySchemes:
+    AdminSessionCookie:
+      type: apiKey
+      in: cookie
+      name: admin_token

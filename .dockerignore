@@ -1,0 +1,13 @@
+# Keep the build context small and stop local or CI-only files leaking into images.
+.git
+.github
+.gitignore
+.dockerignore
+Dockerfile
+docker-compose.yml
+dev.ps1
+node_modules
+*.md
+*.test
+*.out
+coverage*

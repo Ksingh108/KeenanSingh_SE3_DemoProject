@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Book Visit - Gringotts Bank</title>
+    <link href="/static/style.css" rel="stylesheet">
+    <style>[x-cloak] { display: none !important; }</style>
+    <script defer src="/static/alpine.min.js"></script>
+</head>
+<body class="bg-gray-50 dark:bg-gray-900 transition-colors">
+<!-- Booking page: user-facing form to create a branch visit. Uses Alpine.js
+     for local state and fetch() calls to backend APIs. -->
+<div x-data="bookingApp()" x-init="init()">
+    <!-- Header -->
+    <header class="bg-gradient-to-r from-amber-700 to-amber-900 dark:from-amber-800 dark:to-amber-950 text-white shadow-lg">
+        <div class="container mx-auto px-4 py-6">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-3">
+                    <svg class="w-10 h-10" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M4 4a2 2 0 00-2 2v1h16V6a2 2 0 00-2-2H4z"/>
+                        <path fill-rule="evenodd" d="M18 9H2v5a2 2 0 002 2h12a2 2 0 002-2V9zM4 13a1 1 0 011-1h1a1 1 0 110 2H5a1 1 0 01-1-1zm5-1a1 1 0 100 2h1a1 1 0 100-2H9z" clip-rule="evenodd"/>
+                    </svg>
+                    <h1 class="text-3xl font-bold">Gringotts Bank</h1>
+                </div>
+                <div class="flex items-center space-x-6">
+                    <nav class="hidden md:flex space-x-6">
+                        <a href="/booking" class="text-amber-200">New Booking</a>
+                        <a href="/branches" class="hover:text-amber-200 transition">Our Branches</a>
+                        <a href="#" @click.prevent="showAdminLogin = true" class="hover:text-amber-200 transition">Admin</a>
+                    </nav>
+                    <button @click="toggleDarkMode" class="p-2 rounded-lg bg-amber-800 hover:bg-amber-700 transition">
+                        <svg x-show="!darkMode" x-cloak class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                            <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"/>
+                        </svg>
+                        <svg x-show="darkMode" x-cloak class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clip-rule="evenodd"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div x-show="notice.show" x-cloak x-transition
+         :class="notice.type === 'error' ? 'bg-red-100 border-red-400 text-red-700 dark:bg-red-900 dark:border-red-700 dark:text-red-100' : notice.type === 'success' ? 'bg-green-100 border-green-400 text-green-700 dark:bg-green-900 dark:border-green-700 dark:text-green-100' : 'bg-blue-100 border-blue-400 text-blue-700 dark:bg-blue-900 dark:border-blue-700 dark:text-blue-100'"
+         class="container mx-auto mt-4 border rounded-lg px-4 py-3 mx-4 md:mx-auto"
+         x-text="notice.text">
+    </div>
+
+    <!-- Main Content: booking form, date/time selection, and confirmation message -->
+    <main class="container mx-auto px-4 py-8 dark:text-white">
+        <div class="max-w-3xl mx-auto">
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-8">
+                <h2 class="text-2xl font-bold text-gray-800 dark:text-white mb-6">Book Your Branch Visit</h2>
+
+                <form x-show="!confirmation" x-cloak @submit.prevent="submitBooking" :aria-busy="isSubmitting" :inert="isSubmitting" class="space-y-6">
+                    <!-- Personal Information -->
+                    <div class="space-y-4">
+                        <h3 class="text-lg font-semibold text-gray-700 dark:text-gray-300">Personal Information</h3>
+
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Full Name</label>
+                            <input type="text" x-model="bookingForm.customerName" required
+                                   class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent">
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Email</label>
+                                <input type="email" x-model="bookingForm.email" required
+                                       class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Phone</label>
+                                <input type="tel" x-model="bookingForm.phone" required
+                                       inputmode="tel"
+                                       pattern="^\\+?[0-9]+([ -][0-9]+)*$"
+                                       placeholder="+27 82 123 4567"
+                                       title="Use a South African number, for example +27 82 123 4567 or 082 123 4567"
+                                       class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent">
+                                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Use a South African number, for example +27 82 123 4567 or 082 123 4567.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Branch Selection: updates bookingForm.branch_id and triggers loadAvailableSlots -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Select Branch</label>
+                        <select x-model="bookingForm.branch_id" @change="loadAvailableSlots" required
+                                class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent">
+                            <option value="">Choose a branch</option>
+                            <template x-for="branch in branches" :key="branch.id">
+                                <option :value="branch.id" x-text="`${branch.name} - ${branch.city}`"></option>
+                            </template>
+                        </select>
+                    </div>
+
+                    <!-- Service Selection: populated from selectedBranchServices derived from branches data -->
+                    <div x-show="bookingForm.branch_id" x-cloak>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Service Required</label>
+                        <select x-model="bookingForm.service" required
+                                class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent">
+                            <option value="">Choose a service</option>
+                            <template x-for="service in selectedBranchServices" :key="service">
+                                <option :value="service" x-text="service"></option>
+                            </template>
+                        </select>
+                    </div>
+
+                    <!-- Date Selection: minDate prevents past dates; changing date reloads available slots -->
+                    <div x-show="bookingForm.branch_id" x-cloak>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Preferred Date</label>
+                        <input type="date" x-model="bookingForm.date" @change="loadAvailableSlots" required
+                               :min="minDate"
+                               class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent">
+                    </div>
+
+                    <!-- Time Slot Selection: availableSlots is set by loadAvailableSlots; user picks time_slot -->
+                    <div x-show="bookingForm.date && availableSlots.length > 0" x-cloak>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Available Time Slots</label>
+                        <div class="grid grid-cols-3 md:grid-cols-4 gap-3">
+                            <template x-for="slot in availableSlots" :key="slot">
+                                <button type="button" @click="bookingForm.time_slot = slot"
+                                        :class="bookingForm.time_slot === slot ? 'bg-amber-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'"
+                                        class="px-4 py-2 rounded-lg font-medium transition">
+                                    <span x-text="slot"></span>
+                                </button>
+                            </template>
+                        </div>
+                    </div>
+
+                    <div x-show="bookingForm.date && availableSlots.length === 0" x-cloak
+                         class="text-center py-4 text-gray-600 dark:text-gray-400">
+                        No available slots for this date. Please choose another date.
+                    </div>
+
+                    <!-- Submit Button: disabled until isFormValid is true; triggers submitBooking -->
+                    <div class="pt-4">
+                        <button type="submit"
+                                :disabled="!isFormValid || isSubmitting"
+                                :class="isFormValid && !isSubmitting ? 'bg-amber-600 hover:bg-amber-700' : 'bg-gray-400 cursor-not-allowed'"
+                                class="w-full text-white font-bold py-3 rounded-lg transition">
+                            <span x-text="isSubmitting ? 'Submitting...' : 'Confirm Booking'"></span>
+                        </button>
+                    </div>
+                </form>
+
+                <section x-show="confirmation" x-cloak role="status" aria-live="polite"
+                         class="mt-6 p-6 bg-green-50 border border-green-300 text-green-900 rounded-lg">
+                    <h3 class="text-xl font-semibold">Booking Confirmed</h3>
+                    <p class="mt-1 text-sm">Your booking has been saved. Keep this reference for your visit.</p>
+                    <dl class="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4 text-sm">
+                        <div>
+                            <dt class="font-medium text-green-800">Booking reference</dt>
+                            <dd class="mt-1 break-all" x-text="confirmation.id"></dd>
+                        </div>
+                        <div>
+                            <dt class="font-medium text-green-800">Status</dt>
+                            <dd class="mt-1 capitalize" x-text="confirmation.status"></dd>
+                        </div>
+                        <div>
+                            <dt class="font-medium text-green-800">Name</dt>
+                            <dd class="mt-1" x-text="confirmation.customer_name"></dd>
+                        </div>
+                        <div>
+                            <dt class="font-medium text-green-800">Branch</dt>
+                            <dd class="mt-1" x-text="confirmation.branchName"></dd>
+                        </div>
+                        <div>
+                            <dt class="font-medium text-green-800">Service</dt>
+                            <dd class="mt-1" x-text="confirmation.serviceName"></dd>
+                        </div>
+                        <div>
+                            <dt class="font-medium text-green-800">Date and time</dt>
+                            <dd class="mt-1"><span x-text="confirmation.date"></span> at <span x-text="confirmation.time_slot"></span></dd>
+                        </div>
+                    </dl>
+                    <button type="button" @click="startNewBooking"
+                            class="mt-6 px-4 py-2 bg-green-800 hover:bg-green-900 text-white font-medium rounded transition">
+                        Book another visit
+                    </button>
+                </section>
+            </div>
+        </div>
+    </main>
+
+    <!-- Admin Login Modal: lightweight modal for admin authentication (posts to /admin/login) -->
+    <div x-show="showAdminLogin" x-cloak class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div class="bg-white dark:bg-gray-800 dark:text-white p-6 rounded-lg shadow-xl w-full max-w-md mx-4">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-bold">Admin Login</h3>
+                <button @click="showAdminLogin = false" class="text-gray-500 hover:text-gray-700">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+            
+            <form @submit.prevent="adminLogin" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium mb-2">Username</label>
+                    <input type="text" x-model="adminForm.username" required
+                           class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 rounded-md focus:ring-amber-500 focus:border-amber-500">
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium mb-2">Password</label>
+                    <input type="password" x-model="adminForm.password" required
+                           class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 rounded-md focus:ring-amber-500 focus:border-amber-500">
+                </div>
+                
+                <button type="submit" class="w-full bg-amber-600 text-white py-2 px-4 rounded-md hover:bg-amber-700 transition">
+                    Login
+                </button>
+            </form>
+            
+            <div x-show="adminError" x-cloak class="mt-4 text-red-600 text-sm" x-text="adminError"></div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="bg-gray-800 dark:bg-gray-950 text-white mt-16 py-8">
+        <div class="container mx-auto px-4 text-center">
+            <p>&copy; 2025 Gringotts Bank. All rights reserved.</p>
+            <p class="text-sm text-gray-400 mt-2">Protecting your treasures since 1474</p>
+        </div>
+    </footer>
+</div>
+
+<!-- Inline script: bookingApp() defines the page state and methods used by bindings
+     and event handlers (init, loadBranches, loadAvailableSlots, submitBooking,
+     adminLogin, helpers, theme). -->
+<script>
+    function bookingApp() {
+        return {
+            darkMode: localStorage.getItem('darkMode') === 'true',
+            branches: [],
+            availableSlots: [],
+            confirmation: null,
+            isSubmitting: false,
+            idempotencyKey: '',
+            idempotencyPayload: '',
+            notice: {
+                show: false,
+                type: 'info',
+                text: ''
+            },
+            showAdminLogin: false,
+            adminForm: { username: '', password: '' },
+            adminError: '',
+            bookingForm: {
+                customerName: '',
+                email: '',
+                phone: '',
+                branch_id: '',
+                service: '',
+                date: '',
+                time_slot: ''
+            },
+
+            showNotice(type, text) {
+                this.notice = { show: true, type, text };
+            },
+
+            get minDate() {
+                const dateParts = new Intl.DateTimeFormat('en', {
+                    timeZone: 'Africa/Johannesburg',
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit'
+                }).formatToParts(new Date()).reduce((parts, part) => {
+                    parts[part.type] = part.value;
+                    return parts;
+                }, {});
+                return `${dateParts.year}-${dateParts.month}-${dateParts.day}`;
+            },
+
+            get selectedBranchServices() {
+                const branch = this.branches.find(b => b.id === this.bookingForm.branch_id);
+                if (!branch || !branch.services) return [];
+                return branch.services.map(service => service.name || service);
+            },
+
+            get isFormValid() {
+                return this.bookingForm.customerName &&
+                    this.bookingForm.email &&
+                    this.bookingForm.phone &&
+                    this.bookingForm.branch_id &&
+                    this.bookingForm.service &&
+                    this.bookingForm.date &&
+                    this.bookingForm.time_slot;
+            },
+
+            async init() {
+                document.documentElement.classList.toggle('dark', this.darkMode);
+                await this.loadBranches();
+                this.checkUrlParams();
+            },
+
+            checkUrlParams() {
+                const urlParams = new URLSearchParams(window.location.search);
+                const branchId = urlParams.get('branch');
+                if (branchId) {
+                    this.bookingForm.branch_id = branchId;
+                    this.loadAvailableSlots();
+                }
+            },
+
+            async loadBranches() {
+                try {
+                    const response = await fetch('/api/branches');
+                    const data = await response.json();
+                    this.branches = data || [];
+                } catch (error) {
+                    console.error('Error loading branches:', error);
+                    this.branches = [];
+                }
+            },
+
+            async loadAvailableSlots() {
+                if (!this.bookingForm.branch_id || !this.bookingForm.date) return;
+
+                try {
+                    const response = await fetch(
+                        `/api/availability/${this.bookingForm.branch_id}/${this.bookingForm.date}`
+                    );
+                    const capacityStatus = await response.json();
+                    
+                    console.log('API Response:', capacityStatus);
+                    
+                    // Filter out slots that are at capacity (true = at capacity, false = available)
+                    this.availableSlots = Object.keys(capacityStatus).filter(slot => !capacityStatus[slot]);
+                    
+                    console.log('Available slots:', this.availableSlots);
+                    console.log('Available slots length:', this.availableSlots.length);
+                } catch (error) {
+                    console.error('Error loading slots:', error);
+                    this.availableSlots = [];
+                }
+            },
+
+            async submitBooking() {
+                if (this.isSubmitting) return;
+                this.isSubmitting = true;
+
+                try {
+                    const payload = {
+                        customer_name: this.bookingForm.customerName,
+                        email: this.bookingForm.email,
+                        phone: this.bookingForm.phone,
+                        branch_id: this.bookingForm.branch_id,
+                        service_id: this.getServiceId(this.bookingForm.service),
+                        date: this.bookingForm.date,
+                        time_slot: this.bookingForm.time_slot
+                    };
+                    const requestBody = JSON.stringify(payload);
+                    if (requestBody !== this.idempotencyPayload) {
+                        this.idempotencyKey = crypto.randomUUID();
+                        this.idempotencyPayload = requestBody;
+                    }
+
+                    const response = await fetch('/api/bookings', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Idempotency-Key': this.idempotencyKey
+                        },
+                        body: requestBody
+                    });
+
+                    let result;
+                    const responseText = await response.text();
+                    
+                    try {
+                        result = JSON.parse(responseText);
+                    } catch (e) {
+                        this.showNotice('error', 'Server error: ' + responseText.substring(0, 200));
+                        return;
+                    }
+                    
+                    if (!response.ok) {
+                        console.log('Booking failed:', response.status, result);
+                        const errorMessage = typeof result.error === 'string'
+                            ? result.error
+                            : result.error?.message;
+                        this.showNotice('error', errorMessage || 'Failed to create booking');
+                        return;
+                    }
+                    
+                    const branch = this.branches.find(item => item.id === result.branch_id);
+                    const service = branch?.services?.find(item => item.id === result.service_id);
+                    this.confirmation = {
+                        ...result,
+                        branchName: branch ? `${branch.name} - ${branch.city}` : result.branch_id,
+                        serviceName: service ? service.name : result.service_id
+                    };
+                    this.showNotice('success', 'Booking confirmed successfully');
+                    this.resetForm();
+                } catch (error) {
+                    console.error('Error creating booking:', error);
+                    this.showNotice('error', 'Failed to create booking. Please try again.');
+                } finally {
+                    this.isSubmitting = false;
+                }
+            },
+
+            getServiceId(serviceName) {
+                const branch = this.branches.find(b => b.id === this.bookingForm.branch_id);
+                if (!branch || !branch.services) return '';
+                const service = branch.services.find(s => s.name === serviceName);
+                return service ? service.id : '';
+            },
+
+            toggleDarkMode() {
+                this.darkMode = !this.darkMode;
+                localStorage.setItem('darkMode', this.darkMode);
+                document.documentElement.classList.toggle('dark', this.darkMode);
+            },
+
+            resetForm() {
+                this.bookingForm = {
+                    customerName: '',
+                    email: '',
+                    phone: '',
+                    branch_id: '',
+                    service: '',
+                    date: '',
+                    time_slot: ''
+                };
+                this.availableSlots = [];
+                this.idempotencyKey = '';
+                this.idempotencyPayload = '';
+            },
+
+            startNewBooking() {
+                this.confirmation = null;
+                this.resetForm();
+            },
+
+            async adminLogin() {
+                try {
+                    const response = await fetch('/admin/login', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(this.adminForm)
+                    });
+                    
+                    if (response.ok) {
+                        window.location.href = '/admin';
+                    } else {
+                        this.adminError = 'Invalid credentials';
+                    }
+                } catch (error) {
+                    this.adminError = 'Login failed';
+                }
+            }
+        }
+    }
+</script>
+</body>
+</html>
